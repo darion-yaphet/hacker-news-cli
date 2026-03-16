@@ -1,50 +1,76 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+Version change: placeholder → 1.0.0
+Modified principles:
+- PRINCIPLE_1_NAME placeholder → I. Code Quality as a Gate
+- PRINCIPLE_2_NAME placeholder → II. Test Discipline First
+- PRINCIPLE_3_NAME placeholder → III. Consistent CLI UX Contracts
+- PRINCIPLE_4_NAME placeholder → IV. Performance Budgets
+- PRINCIPLE_5_NAME placeholder → V. Simplicity / YAGNI (Terminal-First)
+Added sections:
+- Quality & Performance Gates
+- Workflow & Review
+Removed sections:
+- None
+Templates requiring updates:
+- ✅ .specify/templates/plan-template.md
+- ✅ .specify/templates/spec-template.md
+- ✅ .specify/templates/tasks-template.md
+- ⚠ .specify/templates/commands/*.md (directory missing)
+- ⚠ README*/docs (not present)
+Follow-up TODOs:
+- TODO(RATIFICATION_DATE): original adoption date unknown
+-->
+# hacker-news-cli Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Code Quality as a Gate
+Changes MUST improve or preserve readability, structure, and lint or static
+analysis baselines. No knowingly degraded quality ships.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Test Discipline First
+New or changed behavior MUST be covered by tests at the right level
+(unit, integration, CLI). Tests MUST fail before the fix.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Consistent CLI UX Contracts
+Flags, output formats, error messages, and exit codes MUST remain consistent
+across commands and versions.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Performance Budgets
+New features MUST stay within defined latency and memory limits and include
+measurement or regression checks.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Simplicity / YAGNI (Terminal-First)
+Prefer the simplest solution that meets requirements; avoid abstraction or
+features without immediate CLI value.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Quality & Performance Gates
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- Linting, formatting, and static analysis MUST pass with no new warnings.
+- Behavior changes MUST include tests at the right level: unit for pure logic;
+  integration for I/O or external services; CLI contract tests for user-facing
+  commands and outputs.
+- CLI UX contracts MUST be verified for changes affecting flags, outputs,
+  errors, or exit codes; breaking changes require explicit migration notes.
+- Performance budgets MUST be stated per command or feature in the spec or PR;
+  changes must include measurements showing budgets met or a justified update.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Workflow & Review
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+- All changes MUST undergo review (PR review or documented self-review if solo).
+- Constitution Check in plans and specs MUST be completed before implementation
+  and rechecked before merge.
+- Tests MUST be green before merge for any behavior change.
+- User-facing CLI changes MUST include release notes or documentation updates.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- This constitution supersedes other guidance; conflicts resolve in its favor.
+- Amendments require documented rationale, a Sync Impact Report, semantic
+  version bump, and updated dates.
+- Compliance review is required for significant changes, and reviewers MUST
+  verify adherence to principles and gates.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption
+date unknown | **Last Amended**: 2026-03-16

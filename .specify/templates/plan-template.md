@@ -31,7 +31,13 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- Code Quality: Plan includes lint or static analysis gates; no new warnings.
+- Test Discipline: Behavior changes include unit, integration, or CLI tests
+  as appropriate; tests are written to fail before fixes.
+- CLI UX Contracts: Flags, outputs, errors, and exit codes remain consistent;
+  breaking changes include migration notes.
+- Performance Budgets: Latency and memory budgets are stated and measurable.
+- Simplicity/YAGNI: Avoid unnecessary abstraction; justify any complexity.
 
 ## Project Structure
 

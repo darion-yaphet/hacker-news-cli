@@ -100,6 +100,14 @@
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
+## Constitution Alignment *(mandatory)*
+
+- CLI UX contract impacts (flags, outputs, errors, exit codes) are identified
+  when applicable.
+- Performance budgets are defined for relevant user journeys.
+- Tests are specified per story at the right level (unit, integration, CLI).
+- Simplicity/YAGNI check: justify any new abstraction or complexity.
+
 ## Success Criteria *(mandatory)*
 
 <!--
