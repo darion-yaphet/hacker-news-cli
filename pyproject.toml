@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Terminal-first Hacker News CLI reader"
 requires-python = ">=3.10"
 dependencies = [
+  "html2text>=2024.2.26",
   "requests>=2.31",
   "rich>=13.7",
 ]
@@ -16,8 +17,26 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+  "mypy>=1.10",
   "pytest>=7.4",
+  "ruff>=0.6",
 ]
 
 [tool.uv]
 package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "__pycache__", "dist", "build"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+disable_error_code = ["import-untyped"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true

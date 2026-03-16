@@ -2,19 +2,34 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, NoReturn
 
 from .client import HNClient, HNClientError
 from .output import comments_output, link_output, story_detail_output, story_list_output
-from .render import print_error, print_json
+from .render import (
+    print_error,
+    print_json,
+    print_text,
+    render_comments_text,
+    render_link_text,
+    render_list_text,
+    render_story_text,
+)
 
 
 class CLIError(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class OutputPayload:
+    kind: str
+    data: Any
+
+
 class JsonArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:  # pragma: no cover - exercised via run
+    def error(self, message: str) -> NoReturn:  # pragma: no cover - exercised via run
         raise CLIError(message)
 
 
@@ -26,37 +41,86 @@ def build_parser() -> JsonArgumentParser:
     list_parser.add_argument("--feed", default="top", choices=HNClient.FEED_MAP.keys())
     list_parser.add_argument("--limit", type=int, default=30)
     list_parser.add_argument("--page", type=int, default=1)
+    _add_client_arguments(list_parser)
+    _add_format_argument(list_parser)
 
     story_parser = subparsers.add_parser("story", help="Show story details")
     story_parser.add_argument("--id", required=True)
+    _add_client_arguments(story_parser)
+    _add_format_argument(story_parser)
 
     comments_parser = subparsers.add_parser("comments", help="Show story comments")
     comments_parser.add_argument("--id", required=True)
+    _add_client_arguments(comments_parser)
+    _add_format_argument(comments_parser)
 
     link_parser = subparsers.add_parser("link", help="Show story link")
     link_parser.add_argument("--id", required=True)
+    _add_client_arguments(link_parser)
+    _add_format_argument(link_parser)
 
     return parser
 
 
-def handle_list(args: argparse.Namespace, client: HNClient) -> dict[str, Any]:
+def _add_format_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--format", choices=("json", "text"), default="json")
+
+
+def _add_client_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument("--retries", type=int, default=2)
+    parser.add_argument("--backoff", type=float, default=0.5)
+
+
+def handle_list(args: argparse.Namespace, client: HNClient) -> OutputPayload:
     stories = client.list_stories(args.feed, args.limit, args.page)
-    return story_list_output(args.feed, args.page, stories)
+    return OutputPayload("list", {"feed": args.feed, "page": args.page, "stories": stories})
 
 
-def handle_story(args: argparse.Namespace, client: HNClient) -> dict[str, Any]:
+def handle_story(args: argparse.Namespace, client: HNClient) -> OutputPayload:
     story = client.get_story(args.id)
-    return story_detail_output(story)
+    return OutputPayload("story", story)
 
 
-def handle_comments(args: argparse.Namespace, client: HNClient) -> dict[str, Any]:
+def handle_comments(args: argparse.Namespace, client: HNClient) -> OutputPayload:
     comments = client.get_comments(args.id)
-    return comments_output(str(args.id), comments)
+    return OutputPayload("comments", {"story_id": str(args.id), "comments": comments})
 
 
-def handle_link(args: argparse.Namespace, client: HNClient) -> dict[str, Any]:
+def handle_link(args: argparse.Namespace, client: HNClient) -> OutputPayload:
     story = client.get_story(args.id)
-    return link_output(story)
+    return OutputPayload("link", story)
+
+
+def output_payload(payload: OutputPayload, output_format: str) -> None:
+    if output_format == "text":
+        if payload.kind == "list":
+            text = render_list_text(
+                payload.data["feed"], payload.data["page"], payload.data["stories"]
+            )
+        elif payload.kind == "story":
+            text = render_story_text(payload.data)
+        elif payload.kind == "comments":
+            text = render_comments_text(payload.data["story_id"], payload.data["comments"])
+        elif payload.kind == "link":
+            text = render_link_text(payload.data)
+        else:
+            raise CLIError("Unknown command")
+        print_text(text)
+        return
+
+    if payload.kind == "list":
+        print_json(
+            story_list_output(payload.data["feed"], payload.data["page"], payload.data["stories"])
+        )
+    elif payload.kind == "story":
+        print_json(story_detail_output(payload.data))
+    elif payload.kind == "comments":
+        print_json(comments_output(payload.data["story_id"], payload.data["comments"]))
+    elif payload.kind == "link":
+        print_json(link_output(payload.data))
+    else:
+        raise CLIError("Unknown command")
 
 
 def run(argv: list[str], client: HNClient | None = None) -> int:
@@ -67,7 +131,11 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
         print_error(str(exc), code=2)
         return 2
 
-    client = client or HNClient()
+    client = client or HNClient(
+        timeout=args.timeout,
+        max_retries=args.retries,
+        backoff=args.backoff,
+    )
 
     try:
         if args.command == "list":
@@ -80,7 +148,7 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
             payload = handle_link(args, client)
         else:
             raise CLIError("Unknown command")
-        print_json(payload)
+        output_payload(payload, args.format)
         return 0
     except HNClientError as exc:
         print_error(str(exc), code=1)

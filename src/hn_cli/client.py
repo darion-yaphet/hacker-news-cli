@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable
+import time
+from typing import Any, Callable, Iterable
 
 import requests
 
@@ -17,6 +18,8 @@ class HNClient:
     base_url: str = "https://hacker-news.firebaseio.com/v0"
     timeout: float = 10.0
     max_retries: int = 2
+    backoff: float = 0.5
+    sleep: Callable[[float], None] = time.sleep
     session: requests.Session | None = None
 
     FEED_MAP = {
@@ -42,14 +45,20 @@ class HNClient:
         return f"{self.base_url}/{path}.json"
 
     def _get_json(self, path: str) -> Any:
+        if self.session is None:
+            raise HNClientError("Session not initialized")
         last_exc: Exception | None = None
-        for _ in range(self.max_retries + 1):
+        for attempt in range(self.max_retries + 1):
             try:
                 response = self.session.get(self._build_url(path), timeout=self.timeout)
                 response.raise_for_status()
                 return response.json()
             except requests.RequestException as exc:
                 last_exc = exc
+                if attempt < self.max_retries:
+                    delay = min(self.backoff * (2**attempt), 4.0)
+                    if delay > 0:
+                        self.sleep(delay)
         raise HNClientError("Request failed") from last_exc
 
     def list_story_ids(self, feed: str) -> list[int]:
