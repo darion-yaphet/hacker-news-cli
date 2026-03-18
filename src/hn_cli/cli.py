@@ -179,8 +179,8 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
             print_json({"ok": True, "logged_out": logged_out, "local_cleared": True})
             return 0
         elif args.command == "whoami":
-            user = client.get_logged_in_user()
-            print_json({"authenticated": bool(user), "username": user})
+            current_user = client.get_logged_in_user()
+            print_json({"authenticated": bool(current_user), "username": current_user})
             return 0
         elif args.command == "list":
             payload = handle_list(args, client)
