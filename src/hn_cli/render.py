@@ -115,7 +115,7 @@ def render_help_text() -> str:
     # header
     with _null_console() as con:
         con.print("[bold]hn[/bold] — Hacker News CLI Reader", highlight=False)
-        con.print("Usage: [bold]hn <command> [options][/bold]\n", highlight=False)
+        con.print("Usage: hn <command> [options]\n", markup=False)
         sections.append(con.export_text())
 
     # commands table
@@ -128,6 +128,7 @@ def render_help_text() -> str:
         ("comments", "Show comments for a story"),
         ("link",     "Show the URL of a story"),
         ("help",     "Show this help message"),
+        ("interactive", "Start interactive mode with > prompt"),
     ]:
         cmd_table.add_row(cmd, desc)
     sections.append(_render_to_string(cmd_table))

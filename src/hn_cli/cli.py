@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
 from dataclasses import dataclass
-from typing import Any, NoReturn
+from typing import Any, Callable, NoReturn
 
 from .client import HNClient, HNClientError
 from .output import comments_output, link_output, story_detail_output, story_list_output
@@ -61,6 +62,7 @@ def build_parser() -> JsonArgumentParser:
     _add_format_argument(link_parser)
 
     subparsers.add_parser("help", help="Show help for all commands")
+    subparsers.add_parser("interactive", help="Start interactive mode with > prompt")
 
     return parser
 
@@ -137,6 +139,8 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
     if args.command == "help":
         print_text(render_help_text())
         return 0
+    if args.command == "interactive":
+        return run_interactive()
 
     client = client or HNClient(
         timeout=args.timeout,
@@ -170,3 +174,49 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
 
 def main() -> None:
     sys.exit(run(sys.argv[1:]))
+
+
+def run_interactive(
+    *,
+    input_fn: Callable[[str], str] = input,
+    runner: Callable[[list[str]], int] | None = None,
+) -> int:
+    """Start interactive mode and execute one command per input line."""
+    run_command = runner if runner is not None else run
+    print_text("Interactive mode. Type 'help' for commands, 'exit' or 'quit' to leave.\n")
+
+    while True:
+        try:
+            line = input_fn("> ")
+        except EOFError:
+            print_text("\n")
+            return 0
+        except KeyboardInterrupt:
+            print_text("\n")
+            return 0
+
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith("hn "):
+            text = text[3:].strip()
+        if text.lower() in {"exit", "quit"}:
+            return 0
+
+        try:
+            argv = shlex.split(text)
+        except ValueError as exc:
+            print_error(str(exc), code=2)
+            continue
+
+        if not argv:
+            continue
+        if argv[0] == "interactive":
+            print_text("Already in interactive mode.\n")
+            continue
+
+        try:
+            run_command(argv)
+        except KeyboardInterrupt:
+            print_text("\n")
+            continue
