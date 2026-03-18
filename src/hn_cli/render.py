@@ -129,6 +129,9 @@ def render_help_text() -> str:
         ("link",     "Show the URL of a story"),
         ("help",     "Show this help message"),
         ("interactive", "Start interactive mode with > prompt"),
+        ("login",    "Login to Hacker News"),
+        ("logout",   "Logout from Hacker News"),
+        ("whoami",   "Show current logged-in user"),
     ]:
         cmd_table.add_row(cmd, desc)
     sections.append(_render_to_string(cmd_table))
@@ -157,6 +160,16 @@ def render_help_text() -> str:
                 ("--timeout", "FLOAT", "Request timeout in seconds (default: 10.0)"),
                 ("--retries", "INT",   "Max retry attempts (default: 2)"),
                 ("--backoff", "FLOAT", "Retry backoff factor in seconds (default: 0.5)"),
+            ],
+        ),
+        (
+            "login",
+            [
+                ("--username", "TEXT",  "HN username (if omitted, prompt interactively)"),
+                ("--password", "TEXT",  "HN password (if omitted, prompt securely)"),
+                ("--timeout",  "FLOAT", "Request timeout in seconds (default: 10.0)"),
+                ("--retries",  "INT",   "Max retry attempts (default: 2)"),
+                ("--backoff",  "FLOAT", "Retry backoff factor in seconds (default: 0.5)"),
             ],
         ),
     ]

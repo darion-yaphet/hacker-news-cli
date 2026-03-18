@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import shlex
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable, NoReturn
 
+from .auth import apply_auth_session, clear_auth, persist_session
 from .client import HNClient, HNClientError
 from .output import comments_output, link_output, story_detail_output, story_list_output
 from .render import (
@@ -63,6 +65,14 @@ def build_parser() -> JsonArgumentParser:
 
     subparsers.add_parser("help", help="Show help for all commands")
     subparsers.add_parser("interactive", help="Start interactive mode with > prompt")
+    login_parser = subparsers.add_parser("login", help="Login to Hacker News")
+    login_parser.add_argument("--username")
+    login_parser.add_argument("--password")
+    _add_client_arguments(login_parser)
+    logout_parser = subparsers.add_parser("logout", help="Logout from Hacker News")
+    _add_client_arguments(logout_parser)
+    whoami_parser = subparsers.add_parser("whoami", help="Show current logged-in user")
+    _add_client_arguments(whoami_parser)
 
     return parser
 
@@ -141,15 +151,38 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
         return 0
     if args.command == "interactive":
         return run_interactive()
-
     client = client or HNClient(
         timeout=args.timeout,
         max_retries=args.retries,
         backoff=args.backoff,
     )
+    _hydrate_client_auth(client)
 
     try:
-        if args.command == "list":
+        if args.command == "login":
+            username = (args.username or input("Username: ")).strip()
+            password = args.password or getpass.getpass("Password: ")
+            user = client.login(username, password)
+            if client.session is None:
+                raise CLIError("Session not initialized")
+            persist_session(session=client.session, username=user)
+            print_json({"ok": True, "username": user})
+            return 0
+        elif args.command == "logout":
+            logged_out = False
+            try:
+                logged_out = client.logout()
+            except HNClientError:
+                logged_out = False
+            finally:
+                clear_auth()
+            print_json({"ok": True, "logged_out": logged_out, "local_cleared": True})
+            return 0
+        elif args.command == "whoami":
+            user = client.get_logged_in_user()
+            print_json({"authenticated": bool(user), "username": user})
+            return 0
+        elif args.command == "list":
             payload = handle_list(args, client)
         elif args.command == "story":
             payload = handle_story(args, client)
@@ -220,3 +253,9 @@ def run_interactive(
         except KeyboardInterrupt:
             print_text("\n")
             continue
+
+
+def _hydrate_client_auth(client: Any) -> None:
+    if not hasattr(client, "session") or client.session is None:
+        return
+    apply_auth_session(client.session)

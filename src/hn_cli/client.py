@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 import time
 from typing import Any, Callable, Iterable
+from urllib.parse import unquote, urljoin
 
 import requests
 
@@ -16,6 +18,7 @@ class HNClientError(RuntimeError):
 @dataclass
 class HNClient:
     base_url: str = "https://hacker-news.firebaseio.com/v0"
+    web_base_url: str = "https://news.ycombinator.com"
     timeout: float = 10.0
     max_retries: int = 2
     backoff: float = 0.5
@@ -60,6 +63,16 @@ class HNClient:
                     if delay > 0:
                         self.sleep(delay)
         raise HNClientError("Request failed") from last_exc
+
+    def _get_text(self, url: str) -> str:
+        if self.session is None:
+            raise HNClientError("Session not initialized")
+        try:
+            response = self.session.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.text
+        except requests.RequestException as exc:
+            raise HNClientError("Request failed") from exc
 
     def list_story_ids(self, feed: str) -> list[int]:
         endpoint = self.feed_endpoint(feed)
@@ -115,3 +128,47 @@ class HNClient:
 
         walk(comment_ids)
         return comments
+
+    def get_logged_in_user(self) -> str | None:
+        html = self._get_text(f"{self.web_base_url}/news")
+        match = re.search(r'href="user\?id=([^"&]+)".*?\|\s*<a href="logout\?', html, re.DOTALL)
+        if not match:
+            return None
+        return unquote(match.group(1))
+
+    def login(self, username: str, password: str) -> str:
+        if self.session is None:
+            raise HNClientError("Session not initialized")
+        if not username.strip() or not password:
+            raise HNClientError("Username and password are required")
+        # Avoid stale cookies making a failed login appear successful.
+        self.session.cookies.clear()
+        try:
+            response = self.session.post(
+                f"{self.web_base_url}/login",
+                data={"acct": username, "pw": password},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise HNClientError("Login request failed") from exc
+
+        logged_in_user = self.get_logged_in_user()
+        if not logged_in_user:
+            raise HNClientError("Login failed: invalid username or password")
+        return logged_in_user
+
+    def logout(self) -> bool:
+        if self.session is None:
+            raise HNClientError("Session not initialized")
+        html = self._get_text(f"{self.web_base_url}/news")
+        match = re.search(r'href="(logout\?[^"]+)"', html)
+        if not match:
+            return False
+        logout_url = urljoin(f"{self.web_base_url}/", unquote(match.group(1)))
+        try:
+            response = self.session.get(logout_url, timeout=self.timeout)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise HNClientError("Logout request failed") from exc
+        return True
