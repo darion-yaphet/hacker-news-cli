@@ -24,7 +24,7 @@ class FakeClient:
 
 
 def test_list_command_outputs_json(capsys):
-    code = cli.run(["list", "--feed", "top", "--limit", "1", "--page", "1"], client=FakeClient())
+    code = cli.run(["list", "--feed", "top", "--limit", "1", "--page", "1", "--format", "json"], client=FakeClient())
 
     out = capsys.readouterr().out
     payload = json.loads(out)

@@ -21,23 +21,23 @@ class FakeClient:
         ]
 
 
-def test_default_format_is_json(capsys):
+def test_default_format_is_text(capsys):
     code = cli.run(["list", "--feed", "top", "--limit", "1", "--page", "1"], client=FakeClient())
-
-    out = capsys.readouterr().out
-    payload = json.loads(out)
-    assert code == 0
-    assert payload["feed"] == "top"
-
-
-def test_format_text_outputs_plain_text(capsys):
-    code = cli.run(
-        ["list", "--feed", "top", "--limit", "1", "--page", "1", "--format", "text"],
-        client=FakeClient(),
-    )
 
     out = capsys.readouterr().out
     assert code == 0
     assert "Title" in out
     with pytest.raises(json.JSONDecodeError):
         json.loads(out)
+
+
+def test_format_json_outputs_json(capsys):
+    code = cli.run(
+        ["list", "--feed", "top", "--limit", "1", "--page", "1", "--format", "json"],
+        client=FakeClient(),
+    )
+
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert code == 0
+    assert payload["feed"] == "top"

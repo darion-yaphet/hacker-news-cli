@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import sys
 import html
 import re
-from typing import Any, Iterable, TextIO
+from contextlib import contextmanager
+from typing import Any, Iterable, Iterator, TextIO
 
 from rich.console import Console
 from rich.panel import Panel
@@ -14,20 +16,35 @@ import html2text
 from .models import Comment, Story
 
 
-def _console() -> Console:
-    return Console(record=True, force_terminal=False, color_system=None, no_color=True)
+@contextmanager
+def _null_console() -> Iterator[Console]:
+    """Yield a Console that records output without writing to stdout.
+
+    Uses /dev/null as the file so Rich never touches the real stdout, while
+    record=True lets us retrieve the rendered text via export_text().
+    """
+    with open(os.devnull, "w") as null:
+        console = Console(file=null, record=True, force_terminal=False, color_system=None, no_color=True)
+        yield console
 
 
-def print_json(payload: Any, stream: TextIO = sys.stdout) -> None:
-    console = _console()
-    console.print_json(data=payload)
-    stream.write(console.export_text())
+def _render_to_string(renderable: Any) -> str:
+    """Render a Rich renderable to a plain-text string without writing to stdout."""
+    with _null_console() as console:
+        console.print(renderable)
+        return console.export_text()
 
 
-def print_text(text: str, stream: TextIO = sys.stdout) -> None:
-    console = _console()
-    console.print(text)
-    stream.write(console.export_text())
+def print_json(payload: Any, stream: TextIO | None = None) -> None:
+    _stream = stream if stream is not None else sys.stdout
+    with _null_console() as console:
+        console.print_json(data=payload)
+        _stream.write(console.export_text())
+
+
+def print_text(text: str, stream: TextIO | None = None) -> None:
+    _stream = stream if stream is not None else sys.stdout
+    _stream.write(text)
 
 
 def print_error(message: str, code: int = 1, details: dict | None = None) -> None:
@@ -58,9 +75,7 @@ def render_list_text(feed: str, page: int, stories: Iterable[Story]) -> str:
             story.url,
         )
 
-    console = _console()
-    console.print(table)
-    return console.export_text()
+    return _render_to_string(table)
 
 
 def render_story_text(story: Story) -> str:
@@ -73,9 +88,7 @@ def render_story_text(story: Story) -> str:
         f"URL: {story.url}"
     )
     panel = Panel(body, title="Story")
-    console = _console()
-    console.print(panel)
-    return console.export_text()
+    return _render_to_string(panel)
 
 
 def render_comments_text(story_id: str, comments: Iterable[Comment]) -> str:
@@ -93,6 +106,71 @@ def render_comments_text(story_id: str, comments: Iterable[Comment]) -> str:
 
 def render_link_text(story: Story) -> str:
     return story.url
+
+
+def render_help_text() -> str:
+    """Render a formatted help overview for all CLI commands."""
+    sections: list[str] = []
+
+    # header
+    with _null_console() as con:
+        con.print("[bold]hn[/bold] — Hacker News CLI Reader", highlight=False)
+        con.print("Usage: [bold]hn <command> [options][/bold]\n", highlight=False)
+        sections.append(con.export_text())
+
+    # commands table
+    cmd_table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    cmd_table.add_column("Command", min_width=10)
+    cmd_table.add_column("Description")
+    for cmd, desc in [
+        ("list",     "List stories from a feed (default format: text)"),
+        ("story",    "Show details for a story"),
+        ("comments", "Show comments for a story"),
+        ("link",     "Show the URL of a story"),
+        ("help",     "Show this help message"),
+    ]:
+        cmd_table.add_row(cmd, desc)
+    sections.append(_render_to_string(cmd_table))
+
+    # per-command argument tables
+    command_args: list[tuple[str, list[tuple[str, str, str]]]] = [
+        (
+            "list",
+            [
+                ("--feed",    "{top,new,best,ask,show,jobs}", "Feed to read (default: top)"),
+                ("--limit",   "INT",                          "Number of stories to fetch (default: 30)"),
+                ("--page",    "INT",                          "Page number (default: 1)"),
+                ("--format",  "{json,text}",                  "Output format (default: text)"),
+            ],
+        ),
+        (
+            "story / comments / link",
+            [
+                ("--id",     "ID",           "Story ID (required)"),
+                ("--format", "{json,text}",  "Output format (default: json)"),
+            ],
+        ),
+        (
+            "all commands",
+            [
+                ("--timeout", "FLOAT", "Request timeout in seconds (default: 10.0)"),
+                ("--retries", "INT",   "Max retry attempts (default: 2)"),
+                ("--backoff", "FLOAT", "Retry backoff factor in seconds (default: 0.5)"),
+            ],
+        ),
+    ]
+
+    for title, args in command_args:
+        arg_table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+        arg_table.add_column("Option",  min_width=12)
+        arg_table.add_column("Value",   min_width=16)
+        arg_table.add_column("Description")
+        for flag, meta, description in args:
+            arg_table.add_row(flag, meta, description)
+        sections.append(_render_to_string(Panel(arg_table, title=title, expand=False)))
+
+    sections.append("Tip: run 'hn <command> --help' for the full argument list.\n")
+    return "\n".join(sections)
 
 
 def _comment_text(comment: Comment) -> str:

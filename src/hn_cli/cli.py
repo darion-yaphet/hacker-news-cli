@@ -12,6 +12,7 @@ from .render import (
     print_json,
     print_text,
     render_comments_text,
+    render_help_text,
     render_link_text,
     render_list_text,
     render_story_text,
@@ -42,7 +43,7 @@ def build_parser() -> JsonArgumentParser:
     list_parser.add_argument("--limit", type=int, default=30)
     list_parser.add_argument("--page", type=int, default=1)
     _add_client_arguments(list_parser)
-    _add_format_argument(list_parser)
+    list_parser.add_argument("--format", choices=("json", "text"), default="text")
 
     story_parser = subparsers.add_parser("story", help="Show story details")
     story_parser.add_argument("--id", required=True)
@@ -58,6 +59,8 @@ def build_parser() -> JsonArgumentParser:
     link_parser.add_argument("--id", required=True)
     _add_client_arguments(link_parser)
     _add_format_argument(link_parser)
+
+    subparsers.add_parser("help", help="Show help for all commands")
 
     return parser
 
@@ -130,6 +133,10 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
     except CLIError as exc:
         print_error(str(exc), code=2)
         return 2
+
+    if args.command == "help":
+        print_text(render_help_text())
+        return 0
 
     client = client or HNClient(
         timeout=args.timeout,
