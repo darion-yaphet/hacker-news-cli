@@ -24,7 +24,9 @@ def _null_console() -> Iterator[Console]:
     record=True lets us retrieve the rendered text via export_text().
     """
     with open(os.devnull, "w") as null:
-        console = Console(file=null, record=True, force_terminal=False, color_system=None, no_color=True)
+        console = Console(
+            file=null, record=True, force_terminal=False, color_system=None, no_color=True
+        )
         yield console
 
 
@@ -123,15 +125,15 @@ def render_help_text() -> str:
     cmd_table.add_column("Command", min_width=10)
     cmd_table.add_column("Description")
     for cmd, desc in [
-        ("list",     "List stories from a feed (default format: text)"),
-        ("story",    "Show details for a story"),
+        ("list", "List stories from a feed (default format: text)"),
+        ("story", "Show details for a story"),
         ("comments", "Show comments for a story"),
-        ("link",     "Show the URL of a story"),
-        ("help",     "Show this help message"),
+        ("link", "Show the URL of a story"),
+        ("help", "Show this help message"),
         ("interactive", "Start interactive mode with > prompt"),
-        ("login",    "Login to Hacker News"),
-        ("logout",   "Logout from Hacker News"),
-        ("whoami",   "Show current logged-in user"),
+        ("login", "Login to Hacker News"),
+        ("logout", "Logout from Hacker News"),
+        ("whoami", "Show current logged-in user"),
     ]:
         cmd_table.add_row(cmd, desc)
     sections.append(_render_to_string(cmd_table))
@@ -141,43 +143,43 @@ def render_help_text() -> str:
         (
             "list",
             [
-                ("--feed",    "{top,new,best,ask,show,jobs}", "Feed to read (default: top)"),
-                ("--limit",   "INT",                          "Number of stories to fetch (default: 30)"),
-                ("--page",    "INT",                          "Page number (default: 1)"),
-                ("--format",  "{json,text}",                  "Output format (default: text)"),
+                ("--feed", "{top,new,best,ask,show,jobs}", "Feed to read (default: top)"),
+                ("--limit", "INT", "Number of stories to fetch (default: 30)"),
+                ("--page", "INT", "Page number (default: 1)"),
+                ("--format", "{json,text}", "Output format (default: text)"),
             ],
         ),
         (
             "story / comments / link",
             [
-                ("--id",     "ID",           "Story ID (required)"),
-                ("--format", "{json,text}",  "Output format (default: json)"),
+                ("--id", "ID", "Story ID (required)"),
+                ("--format", "{json,text}", "Output format (default: json)"),
             ],
         ),
         (
             "all commands",
             [
                 ("--timeout", "FLOAT", "Request timeout in seconds (default: 10.0)"),
-                ("--retries", "INT",   "Max retry attempts (default: 2)"),
+                ("--retries", "INT", "Max retry attempts (default: 2)"),
                 ("--backoff", "FLOAT", "Retry backoff factor in seconds (default: 0.5)"),
             ],
         ),
         (
             "login",
             [
-                ("--username", "TEXT",  "HN username (if omitted, prompt interactively)"),
-                ("--password", "TEXT",  "HN password (if omitted, prompt securely)"),
-                ("--timeout",  "FLOAT", "Request timeout in seconds (default: 10.0)"),
-                ("--retries",  "INT",   "Max retry attempts (default: 2)"),
-                ("--backoff",  "FLOAT", "Retry backoff factor in seconds (default: 0.5)"),
+                ("--username", "TEXT", "HN username (if omitted, prompt interactively)"),
+                ("--password", "TEXT", "HN password (if omitted, prompt securely)"),
+                ("--timeout", "FLOAT", "Request timeout in seconds (default: 10.0)"),
+                ("--retries", "INT", "Max retry attempts (default: 2)"),
+                ("--backoff", "FLOAT", "Retry backoff factor in seconds (default: 0.5)"),
             ],
         ),
     ]
 
     for title, args in command_args:
         arg_table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
-        arg_table.add_column("Option",  min_width=12)
-        arg_table.add_column("Value",   min_width=16)
+        arg_table.add_column("Option", min_width=12)
+        arg_table.add_column("Value", min_width=16)
         arg_table.add_column("Description")
         for flag, meta, description in args:
             arg_table.add_row(flag, meta, description)
