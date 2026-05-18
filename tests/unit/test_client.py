@@ -1,6 +1,7 @@
 import pytest
+import requests
 
-from hn_cli.client import HNClient
+from hn_cli.client import HNClient, HNClientError
 
 
 def test_feed_endpoint_valid():
@@ -11,3 +12,119 @@ def test_feed_endpoint_valid():
 def test_feed_endpoint_invalid():
     with pytest.raises(ValueError):
         HNClient.feed_endpoint("unknown")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+class FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+class DictSession:
+    """Returns canned JSON responses keyed by URL suffix."""
+
+    def __init__(self, items: dict):
+        self._items = items  # item_id (str) -> dict
+        self.calls: list[str] = []
+
+    def get(self, url: str, timeout: float):
+        self.calls.append(url)
+        for key, value in self._items.items():
+            if url.endswith(f"/{key}.json"):
+                return FakeResponse(value)
+        raise requests.RequestException(f"unexpected url: {url}")
+
+
+# ---------------------------------------------------------------------------
+# get_comments tests
+# ---------------------------------------------------------------------------
+
+def _make_story(kids: list[int]) -> dict:
+    return {"id": 1, "type": "story", "by": "alice", "title": "T", "kids": kids}
+
+
+def _make_comment(cid: int, parent: int, kids: list[int] | None = None) -> dict:
+    return {"id": cid, "type": "comment", "by": "bob", "text": f"comment {cid}",
+            "parent": parent, "kids": kids or []}
+
+
+def test_get_comments_empty():
+    items = {"item/1": _make_story(kids=[])}
+    client = HNClient(session=DictSession(items))
+    assert client.get_comments(1) == []
+
+
+def test_get_comments_flat():
+    """Three sibling comments, no nesting."""
+    items = {
+        "item/1": _make_story(kids=[10, 11, 12]),
+        "item/10": _make_comment(10, parent=1),
+        "item/11": _make_comment(11, parent=1),
+        "item/12": _make_comment(12, parent=1),
+    }
+    client = HNClient(session=DictSession(items))
+    comments = client.get_comments(1)
+
+    assert [c.id for c in comments] == ["10", "11", "12"]
+
+
+def test_get_comments_nested():
+    """Comment 10 has a reply (20), which has a reply (30)."""
+    items = {
+        "item/1": _make_story(kids=[10]),
+        "item/10": _make_comment(10, parent=1, kids=[20]),
+        "item/20": _make_comment(20, parent=10, kids=[30]),
+        "item/30": _make_comment(30, parent=20),
+    }
+    client = HNClient(session=DictSession(items))
+    comments = client.get_comments(1)
+
+    assert [c.id for c in comments] == ["10", "20", "30"]
+
+
+def test_get_comments_concurrent_fetches():
+    """All siblings at a given depth must be fetched before their children."""
+    items = {
+        "item/1": _make_story(kids=[10, 11]),
+        "item/10": _make_comment(10, parent=1, kids=[20]),
+        "item/11": _make_comment(11, parent=1, kids=[21]),
+        "item/20": _make_comment(20, parent=10),
+        "item/21": _make_comment(21, parent=11),
+    }
+    session = DictSession(items)
+    client = HNClient(session=session)
+    comments = client.get_comments(1)
+
+    assert {c.id for c in comments} == {"10", "11", "20", "21"}
+    # story itself fetched once, then 2+2 comments = 5 total item fetches
+    assert len(session.calls) == 5
+
+
+def test_get_comments_skips_failed_item():
+    """A failing item fetch should be skipped, not abort the whole call."""
+    class FlakySession:
+        def get(self, url: str, timeout: float):
+            if url.endswith("/item/11.json"):
+                raise requests.RequestException("timeout")
+            payload = {
+                "item/1": _make_story(kids=[10, 11, 12]),
+                "item/10": _make_comment(10, parent=1),
+                "item/12": _make_comment(12, parent=1),
+            }
+            for key, value in payload.items():
+                if url.endswith(f"/{key}.json"):
+                    return FakeResponse(value)
+            raise requests.RequestException(f"unexpected: {url}")
+
+    client = HNClient(session=FlakySession())
+    comments = client.get_comments(1)
+    assert [c.id for c in comments] == ["10", "12"]

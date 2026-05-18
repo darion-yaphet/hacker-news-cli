@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import re
 import time
@@ -22,6 +23,7 @@ class HNClient:
     timeout: float = 10.0
     max_retries: int = 2
     backoff: float = 0.5
+    max_workers: int = 10
     sleep: Callable[[float], None] = time.sleep
     session: requests.Session | None = None
 
@@ -113,20 +115,24 @@ class HNClient:
 
     def get_comments(self, story_id: int | str) -> list[Comment]:
         story = self.get_item(story_id)
-        comment_ids = story.get("kids", []) or []
+        pending: list[int] = list(story.get("kids", []) or [])
+        if not pending:
+            return []
+
         comments: list[Comment] = []
-
-        def walk(ids: Iterable[int]) -> None:
-            for comment_id in ids:
-                data = self.get_item(comment_id)
-                if data.get("type") != "comment":
-                    continue
-                comments.append(Comment.from_api(data))
-                kids = data.get("kids", []) or []
-                if kids:
-                    walk(kids)
-
-        walk(comment_ids)
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            while pending:
+                futures = [executor.submit(self.get_item, cid) for cid in pending]
+                pending = []
+                for future in futures:
+                    try:
+                        data = future.result()
+                    except HNClientError:
+                        continue
+                    if data.get("type") != "comment":
+                        continue
+                    comments.append(Comment.from_api(data))
+                    pending.extend(data.get("kids", []) or [])
         return comments
 
     def get_logged_in_user(self) -> str | None:
