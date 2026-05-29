@@ -5,26 +5,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Install dependencies (use uv)
-uv pip install -e ".[dev]"
+# Install dependencies, including the dev group (use uv)
+uv sync
 
 # Run all tests
-pytest
+uv run pytest
 
 # Run a single test file
-pytest tests/unit/test_client.py
+uv run pytest tests/unit/test_client.py
 
 # Run a single test by name
-pytest tests/unit/test_client.py::test_function_name
+uv run pytest tests/unit/test_client.py::test_function_name
 
 # Lint
-ruff check .
+uv run ruff check .
 
 # Format
-ruff format .
+uv run ruff format .
 
 # Type check
-mypy src/hn_cli
+uv run mypy src/hn_cli
 ```
 
 ## Architecture
