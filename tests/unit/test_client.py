@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from hn_cli.client import HNClient, HNClientError
+from hn_cli.client import HNClient
 
 
 def test_feed_endpoint_valid():
