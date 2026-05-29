@@ -99,9 +99,16 @@ class HNClient:
     def list_stories(self, feed: str, limit: int, page: int) -> list[Story]:
         ids = self.list_story_ids(feed)
         selected = self.chunk_ids(ids, limit, page)
+        if not selected:
+            return []
+
+        # Fetch concurrently; executor.map preserves input order and
+        # re-raises any per-item error in order, matching serial behavior.
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            items = list(executor.map(self.get_item, selected))
+
         stories: list[Story] = []
-        for item_id in selected:
-            data = self.get_item(item_id)
+        for data in items:
             if data.get("type") != "story":
                 continue
             stories.append(Story.from_api(data, feed=feed))

@@ -109,6 +109,41 @@ def test_get_comments_concurrent_fetches():
     assert len(session.calls) == 5
 
 
+def test_list_stories_preserves_order():
+    """Concurrent fetching must still return stories in feed-id order."""
+    items = {
+        "topstories": [10, 11, 12],
+        "item/10": {"id": 10, "type": "story", "by": "a", "title": "First"},
+        "item/11": {"id": 11, "type": "story", "by": "b", "title": "Second"},
+        "item/12": {"id": 12, "type": "story", "by": "c", "title": "Third"},
+    }
+    client = HNClient(session=DictSession(items))
+    stories = client.list_stories("top", limit=30, page=1)
+
+    assert [s.id for s in stories] == ["10", "11", "12"]
+    assert [s.title for s in stories] == ["First", "Second", "Third"]
+
+
+def test_list_stories_filters_non_story():
+    """Items that are not stories (e.g. jobs/polls) are skipped, order kept."""
+    items = {
+        "topstories": [10, 11, 12],
+        "item/10": {"id": 10, "type": "story", "by": "a", "title": "Keep"},
+        "item/11": {"id": 11, "type": "job", "by": "b", "title": "Drop"},
+        "item/12": {"id": 12, "type": "story", "by": "c", "title": "Keep2"},
+    }
+    client = HNClient(session=DictSession(items))
+    stories = client.list_stories("top", limit=30, page=1)
+
+    assert [s.id for s in stories] == ["10", "12"]
+
+
+def test_list_stories_empty_page():
+    items = {"topstories": [10, 11]}
+    client = HNClient(session=DictSession(items))
+    assert client.list_stories("top", limit=10, page=5) == []
+
+
 def test_get_comments_skips_failed_item():
     """A failing item fetch should be skipped, not abort the whole call."""
     class FlakySession:
