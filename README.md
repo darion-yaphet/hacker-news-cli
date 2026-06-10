@@ -6,8 +6,10 @@ A terminal-first command-line tool for browsing Hacker News. Read stories, view 
 
 - **Browse story lists** — View top, new, best, ask, show, and job stories
 - **View story details** — See full story metadata including title, author, score, and comment count
-- **Read comments** — Display comment threads in a readable format with HTML-to-text conversion
+- **Read threaded comments** — Comment trees rendered with indentation, HTML converted to text, with depth and count limits
 - **Get story links** — Quickly extract URLs for opening in your browser
+- **Login / logout / whoami** — Authenticate against news.ycombinator.com with a locally persisted session
+- **Interactive mode** — A REPL that reuses one HTTP session across commands
 - **Multiple output formats** — JSON for scripting, text for human readability
 - **Resilient API client** — Automatic retries with exponential backoff for network failures
 
@@ -34,7 +36,7 @@ pip install -e .
 
 ## Usage
 
-The CLI provides four main commands: `list`, `story`, `comments`, and `link`.
+Commands: `list`, `story`, `comments`, `link`, `login`, `logout`, `whoami`, `interactive`, and `help`.
 
 ### List stories
 
@@ -65,11 +67,20 @@ hn story --id 39528747
 
 ### Read comments
 
-Display the comment thread for a story:
+Display the comment thread for a story. Replies are indented under their
+parent; `depth` in the JSON output records the nesting level:
 
 ```bash
-hn comments --id 39528747
+hn comments --id 39528747 --format text
+
+# Limit how deep the thread is fetched (1 = top-level comments only)
+hn comments --id 39528747 --depth 2
+
+# Cap the total number of comments fetched (parents are kept before replies)
+hn comments --id 39528747 --max-comments 50
 ```
+
+Without `--depth` / `--max-comments` the entire thread is fetched.
 
 ### Get story link
 
@@ -79,16 +90,48 @@ Extract the URL for a story:
 hn link --id 39528747
 ```
 
-### Output formats
+### Login, logout, whoami
 
-All commands support `--format` option:
+Sessions are persisted to `~/.config/hn-cli/auth.json` (override with the
+`HN_CLI_AUTH_FILE` environment variable):
 
 ```bash
-# JSON output (default) - structured data for scripting
+# Interactive login: prompts for username and password
+hn login
+
+# Scripted login: password comes from the environment, never from CLI args
+HN_CLI_PASSWORD=... hn login --username alice
+
+# Check the current session (no network request when no session is saved)
+hn whoami
+
+# Log out remotely and clear the local session
+hn logout
+```
+
+There is intentionally no `--password` flag — a password on the command line
+would leak into shell history and `ps` output.
+
+### Interactive mode
+
+```bash
+hn interactive
+```
+
+Starts a `>` prompt that accepts the same commands (with or without the `hn`
+prefix) and reuses one HTTP connection across them. Exit with `exit`/`quit`.
+
+### Output formats
+
+All data commands support `--format`. `list` defaults to `text`; `story`,
+`comments`, and `link` default to `json`:
+
+```bash
+# Structured data for scripting
 hn list --format json
 
-# Text output - formatted tables and readable text
-hn list --format text
+# Formatted tables and readable text
+hn story --id 39528747 --format text
 ```
 
 ### Connection options
@@ -121,54 +164,57 @@ The project follows a layered architecture:
 src/hn_cli/
 ├── cli.py      # Command-line interface and argument parsing
 ├── client.py   # Hacker News API client with retry logic
-├── models.py   # Data models (Story, Comment, Feed)
+├── auth.py     # Persisted login session (cookies + username)
+├── models.py   # Data models (Story, Comment)
 ├── output.py   # JSON output formatting
 └── render.py   # Text rendering with Rich library
 ```
 
 ### API Client
 
-The `HNClient` class wraps the [Hacker News Firebase API](https://github.com/HackerNews/API) with:
-- Automatic retries with exponential backoff
+The `HNClient` class wraps the [Hacker News Firebase API](https://github.com/HackerNews/API)
+and the news.ycombinator.com web interface (for login state) with:
+- Automatic retries with exponential backoff on all requests
 - Configurable timeouts
 - Connection pooling via `requests.Session`
+- Concurrent story and comment fetching
+- Failed items are skipped with a warning instead of failing the whole page
 
 ### Data Models
 
 Immutable dataclasses for core entities:
 - **Story** — title, author, score, age, URL, comment count
-- **Comment** — author, age, content (HTML converted to text)
-- **Feed** — named story collections (top, new, best, etc.)
+- **Comment** — author, age, content (HTML converted to text), thread depth
 
 ## Development
 
 ### Setup
 
 ```bash
-# Install development dependencies
-uv pip install -e ".[dev]"
-
-# Or with pip
-pip install -e ".[dev]"
+# Install dependencies, including the dev group
+uv sync
 ```
 
 ### Running tests
 
 ```bash
-pytest
+uv run pytest
+
+# With the coverage gate (fails under 80%)
+uv run pytest --cov=hn_cli
 ```
 
 ### Code quality
 
 ```bash
 # Linting
-ruff check .
+uv run ruff check .
 
 # Type checking
-mypy src/hn_cli
+uv run mypy src/hn_cli
 
 # Formatting
-ruff format .
+uv run ruff format .
 ```
 
 ## License

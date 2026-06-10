@@ -64,9 +64,3 @@ class Comment:
             parent_id=str(data.get("parent", "")),
             depth=depth,
         )
-
-
-@dataclass(frozen=True)
-class Feed:
-    name: str
-    display_label: str

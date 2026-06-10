@@ -140,9 +140,8 @@ class HNClient:
         return data
 
     def chunk_ids(self, ids: Iterable[int], limit: int, page: int) -> list[int]:
-        start = max(0, (page - 1) * limit)
-        end = start + limit
-        return list(ids)[start:end]
+        start = (page - 1) * limit
+        return list(ids)[start : start + limit]
 
     def list_stories(self, feed: str, limit: int, page: int) -> list[Story]:
         if limit < 1:
@@ -154,16 +153,20 @@ class HNClient:
         if not selected:
             return []
 
-        # Fetch concurrently; executor.map preserves input order and
-        # re-raises any per-item error in order, matching serial behavior.
+        # Fetch concurrently in feed order; a failed item is skipped with a
+        # warning instead of failing the whole page — same policy as comments.
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            items = list(executor.map(self.get_item, selected))
-
-        stories: list[Story] = []
-        for data in items:
-            if data.get("type") != "story":
-                continue
-            stories.append(Story.from_api(data, feed=feed))
+            futures = [(executor.submit(self.get_item, sid), sid) for sid in selected]
+            stories: list[Story] = []
+            for future, sid in futures:
+                try:
+                    data = future.result()
+                except HNClientError as exc:
+                    logger.warning("Skipping story %s: %s", sid, exc)
+                    continue
+                if data.get("type") != "story":
+                    continue
+                stories.append(Story.from_api(data, feed=feed))
         return stories
 
     def get_story(self, story_id: int | str) -> Story:

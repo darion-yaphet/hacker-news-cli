@@ -210,6 +210,28 @@ def test_list_stories_empty_page():
     assert client.list_stories("top", limit=10, page=5) == []
 
 
+def test_list_stories_skips_failed_item_with_warning(caplog):
+    """One dead story must not kill the whole page — same policy as comments."""
+    items = {
+        "topstories": [10, 11, 12],
+        "item/10": {"id": 10, "type": "story", "by": "a", "title": "First"},
+        "item/12": {"id": 12, "type": "story", "by": "c", "title": "Third"},
+    }
+
+    class FlakySession(DictSession):
+        def get(self, url: str, timeout: float):
+            if url.endswith("/item/11.json"):
+                raise requests.RequestException("timeout")
+            return super().get(url, timeout)
+
+    client = HNClient(session=FlakySession(items), backoff=0, sleep=lambda _: None)
+    with caplog.at_level("WARNING", logger="hn_cli.client"):
+        stories = client.list_stories("top", limit=30, page=1)
+
+    assert [s.id for s in stories] == ["10", "12"]
+    assert "11" in caplog.text
+
+
 def test_get_comments_skips_failed_item_with_warning(caplog):
     """A failing item fetch is skipped but reported, never silently dropped."""
 
