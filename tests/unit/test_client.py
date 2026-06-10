@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from hn_cli.client import HNClient
+from hn_cli.client import HNClient, HNClientError
 
 
 def test_feed_endpoint_valid():
@@ -210,8 +210,8 @@ def test_list_stories_empty_page():
     assert client.list_stories("top", limit=10, page=5) == []
 
 
-def test_get_comments_skips_failed_item():
-    """A failing item fetch should be skipped, not abort the whole call."""
+def test_get_comments_skips_failed_item_with_warning(caplog):
+    """A failing item fetch is skipped but reported, never silently dropped."""
 
     class FlakySession:
         def get(self, url: str, timeout: float):
@@ -227,6 +227,34 @@ def test_get_comments_skips_failed_item():
                     return FakeResponse(value)
             raise requests.RequestException(f"unexpected: {url}")
 
-    client = HNClient(session=FlakySession())
-    comments = client.get_comments(1)
+    client = HNClient(session=FlakySession(), backoff=0, sleep=lambda _: None)
+    with caplog.at_level("WARNING", logger="hn_cli.client"):
+        comments = client.get_comments(1)
+
     assert [c.id for c in comments] == ["10", "12"]
+    assert "11" in caplog.text
+
+
+def test_list_stories_rejects_non_positive_limit_page():
+    client = HNClient(session=DictSession({"topstories": [10]}))
+    with pytest.raises(ValueError):
+        client.list_stories("top", limit=0, page=1)
+    with pytest.raises(ValueError):
+        client.list_stories("top", limit=10, page=0)
+
+
+def test_get_json_error_includes_url_and_attempts():
+    """Network failures must surface the URL and attempt count, not a bare message."""
+
+    class DeadSession:
+        def get(self, url: str, timeout: float):
+            raise requests.RequestException("connection refused")
+
+    client = HNClient(session=DeadSession(), max_retries=1, backoff=0, sleep=lambda _: None)
+    with pytest.raises(HNClientError) as excinfo:
+        client.get_item(42)
+
+    message = str(excinfo.value)
+    assert "item/42.json" in message
+    assert "2 attempt" in message
+    assert "connection refused" in message

@@ -57,3 +57,11 @@ def test_render_comments_text_indents_by_depth():
 def test_render_link_text_contains_url():
     text = render.render_link_text(_story())
     assert "https://example.com" in text
+
+
+def test_render_help_text_lists_all_commands():
+    text = render.render_help_text()
+    for command in ("list", "story", "comments", "link", "login", "logout", "whoami"):
+        assert command in text
+    assert "--depth" in text
+    assert "--max-comments" in text

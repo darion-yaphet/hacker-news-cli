@@ -1,4 +1,15 @@
-from hn_cli.models import Comment, Story
+import time
+
+from hn_cli.models import Comment, Story, human_age
+
+
+def test_human_age_buckets():
+    now = int(time.time())
+    assert human_age(None) == "unknown"
+    assert human_age(now - 30).endswith("s ago")
+    assert human_age(now - 300).endswith("m ago")
+    assert human_age(now - 7200).endswith("h ago")
+    assert human_age(now - 172800).endswith("d ago")
 
 
 def test_story_from_api_maps_fields():

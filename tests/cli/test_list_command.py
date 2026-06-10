@@ -35,3 +35,33 @@ def test_list_command_outputs_json(capsys):
     assert payload["feed"] == "top"
     assert payload["page"] == 1
     assert payload["items"][0]["title"] == "Title"
+
+
+def test_list_command_rejects_non_positive_limit(capsys):
+    code = cli.run(["list", "--limit", "0"], client=FakeClient())
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "--limit" in err
+
+
+def test_list_command_rejects_non_positive_page(capsys):
+    code = cli.run(["list", "--page", "-1"], client=FakeClient())
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "--page" in err
+
+
+def test_list_command_rejects_invalid_client_args(capsys):
+    code = cli.run(["list", "--timeout", "0"], client=FakeClient())
+    assert code == 2
+    assert "--timeout" in capsys.readouterr().err
+
+    code = cli.run(["list", "--retries", "-1"], client=FakeClient())
+    assert code == 2
+    assert "--retries" in capsys.readouterr().err
+
+    code = cli.run(["list", "--backoff", "-0.5"], client=FakeClient())
+    assert code == 2
+    assert "--backoff" in capsys.readouterr().err

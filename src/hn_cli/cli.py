@@ -89,7 +89,20 @@ def _add_client_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backoff", type=float, default=0.5)
 
 
+def _validate_client_args(args: argparse.Namespace) -> None:
+    if args.timeout <= 0:
+        raise CLIError("--timeout must be greater than 0")
+    if args.retries < 0:
+        raise CLIError("--retries must be >= 0")
+    if args.backoff < 0:
+        raise CLIError("--backoff must be >= 0")
+
+
 def handle_list(args: argparse.Namespace, client: HNClient) -> OutputPayload:
+    if args.limit < 1:
+        raise CLIError("--limit must be a positive integer")
+    if args.page < 1:
+        raise CLIError("--page must be a positive integer")
     stories = client.list_stories(args.feed, args.limit, args.page)
     return OutputPayload("list", {"feed": args.feed, "page": args.page, "stories": stories})
 
@@ -157,6 +170,11 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
         return 0
     if args.command == "interactive":
         return run_interactive()
+    try:
+        _validate_client_args(args)
+    except CLIError as exc:
+        print_error(str(exc), code=2)
+        return 2
     client = client or HNClient(
         timeout=args.timeout,
         max_retries=args.retries,

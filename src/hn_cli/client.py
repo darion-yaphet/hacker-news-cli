@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+import logging
 import re
 import time
 from typing import Any, Callable, Iterable
@@ -10,6 +11,9 @@ from urllib.parse import unquote, urljoin
 import requests
 
 from .models import Comment, Story
+
+
+logger = logging.getLogger(__name__)
 
 
 class HNClientError(RuntimeError):
@@ -71,10 +75,12 @@ class HNClient:
     def _get_json(self, path: str) -> Any:
         if self.session is None:
             raise HNClientError("Session not initialized")
+        url = self._build_url(path)
+        attempts = self.max_retries + 1
         last_exc: Exception | None = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(attempts):
             try:
-                response = self.session.get(self._build_url(path), timeout=self.timeout)
+                response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 return response.json()
             except requests.RequestException as exc:
@@ -83,7 +89,9 @@ class HNClient:
                     delay = min(self.backoff * (2**attempt), 4.0)
                     if delay > 0:
                         self.sleep(delay)
-        raise HNClientError("Request failed") from last_exc
+        raise HNClientError(
+            f"GET {url} failed after {attempts} attempt(s): {last_exc}"
+        ) from last_exc
 
     def _get_text(self, url: str) -> str:
         if self.session is None:
@@ -93,7 +101,7 @@ class HNClient:
             response.raise_for_status()
             return response.text
         except requests.RequestException as exc:
-            raise HNClientError("Request failed") from exc
+            raise HNClientError(f"GET {url} failed: {exc}") from exc
 
     def list_story_ids(self, feed: str) -> list[int]:
         endpoint = self.feed_endpoint(feed)
@@ -116,6 +124,10 @@ class HNClient:
         return list(ids)[start:end]
 
     def list_stories(self, feed: str, limit: int, page: int) -> list[Story]:
+        if limit < 1:
+            raise ValueError("limit must be a positive integer")
+        if page < 1:
+            raise ValueError("page must be a positive integer")
         ids = self.list_story_ids(feed)
         selected = self.chunk_ids(ids, limit, page)
         if not selected:
@@ -163,12 +175,15 @@ class HNClient:
             while pending:
                 if max_comments is not None and len(comments) >= max_comments:
                     break
-                futures = [(executor.submit(self.get_item, cid), depth) for cid, depth in pending]
+                futures = [
+                    (executor.submit(self.get_item, cid), cid, depth) for cid, depth in pending
+                ]
                 pending = []
-                for future, depth in futures:
+                for future, cid, depth in futures:
                     try:
                         data = future.result()
-                    except HNClientError:
+                    except HNClientError as exc:
+                        logger.warning("Skipping comment %s: %s", cid, exc)
                         continue
                     if data.get("type") != "comment":
                         continue
@@ -204,7 +219,7 @@ class HNClient:
             )
             response.raise_for_status()
         except requests.RequestException as exc:
-            raise HNClientError("Login request failed") from exc
+            raise HNClientError(f"Login request failed: {exc}") from exc
 
         logged_in_user = self.get_logged_in_user()
         if not logged_in_user:
@@ -223,5 +238,5 @@ class HNClient:
             response = self.session.get(logout_url, timeout=self.timeout)
             response.raise_for_status()
         except requests.RequestException as exc:
-            raise HNClientError("Logout request failed") from exc
+            raise HNClientError(f"Logout request failed: {exc}") from exc
         return True

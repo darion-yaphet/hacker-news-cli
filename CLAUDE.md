@@ -17,6 +17,9 @@ uv run pytest tests/unit/test_client.py
 # Run a single test by name
 uv run pytest tests/unit/test_client.py::test_function_name
 
+# Run tests with coverage (fails under 80%)
+uv run pytest --cov=hn_cli
+
 # Lint
 uv run ruff check .
 
