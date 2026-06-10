@@ -29,9 +29,10 @@ def test_login_command_outputs_user_and_persists_session(capsys, monkeypatch):
 
     monkeypatch.setattr(cli, "apply_auth_session", fake_apply_auth_session)
     monkeypatch.setattr(cli, "persist_session", fake_persist_session)
+    monkeypatch.setenv("HN_CLI_PASSWORD", "secret")
 
     client = _LoginClient()
-    code = cli.run(["login", "--username", "alice", "--password", "secret"], client=client)
+    code = cli.run(["login", "--username", "alice"], client=client)
 
     out = capsys.readouterr().out
     payload = json.loads(out)
@@ -40,6 +41,26 @@ def test_login_command_outputs_user_and_persists_session(capsys, monkeypatch):
     assert client.logged_in == ("alice", "secret")
     assert saved["session"] is client.session
     assert saved["username"] == "alice"
+
+
+def test_login_password_flag_no_longer_accepted(capsys):
+    """--password leaks credentials into shell history; the flag is gone."""
+    code = cli.run(["login", "--username", "alice", "--password", "x"], client=_LoginClient())
+
+    assert code == 2
+
+
+def test_login_prompts_for_password_when_env_missing(capsys, monkeypatch):
+    monkeypatch.setattr(cli, "apply_auth_session", lambda _: None)
+    monkeypatch.setattr(cli, "persist_session", lambda **_: None)
+    monkeypatch.delenv("HN_CLI_PASSWORD", raising=False)
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "prompted")
+
+    client = _LoginClient()
+    code = cli.run(["login", "--username", "alice"], client=client)
+
+    assert code == 0
+    assert client.logged_in == ("alice", "prompted")
 
 
 class _IdentityClient:
@@ -56,13 +77,40 @@ class _IdentityClient:
 
 
 def test_whoami_command_reports_authenticated_state(capsys, monkeypatch):
-    monkeypatch.setattr(cli, "apply_auth_session", lambda _: None)
+    monkeypatch.setattr(cli, "apply_auth_session", lambda _: "alice")
     code = cli.run(["whoami"], client=_IdentityClient("alice"))
 
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert code == 0
     assert payload == {"authenticated": True, "username": "alice"}
+
+
+def test_whoami_skips_network_without_saved_auth(capsys, monkeypatch):
+    class _NoNetworkClient:
+        session = _DummySession()
+
+        def get_logged_in_user(self):
+            raise AssertionError("whoami must not hit the network without saved auth")
+
+    monkeypatch.setattr(cli, "apply_auth_session", lambda _: None)
+    code = cli.run(["whoami"], client=_NoNetworkClient())
+
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert code == 0
+    assert payload == {"authenticated": False, "username": None}
+
+
+def test_whoami_reports_stale_saved_session(capsys, monkeypatch):
+    """Saved username but server says logged out -> not authenticated."""
+    monkeypatch.setattr(cli, "apply_auth_session", lambda _: "alice")
+    code = cli.run(["whoami"], client=_IdentityClient(None))
+
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert code == 0
+    assert payload == {"authenticated": False, "username": None}
 
 
 def test_logout_command_clears_auth_and_returns_status(capsys, monkeypatch):

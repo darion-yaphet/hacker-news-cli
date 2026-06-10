@@ -176,10 +176,11 @@ def render_help_text() -> str:
             "login",
             [
                 ("--username", "TEXT", "HN username (if omitted, prompt interactively)"),
-                ("--password", "TEXT", "HN password (if omitted, prompt securely)"),
-                ("--timeout", "FLOAT", "Request timeout in seconds (default: 10.0)"),
-                ("--retries", "INT", "Max retry attempts (default: 2)"),
-                ("--backoff", "FLOAT", "Retry backoff factor in seconds (default: 0.5)"),
+                (
+                    "HN_CLI_PASSWORD",
+                    "ENV",
+                    "Password env var (if unset, prompt securely; never pass via CLI args)",
+                ),
             ],
         ),
     ]

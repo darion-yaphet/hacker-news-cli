@@ -73,7 +73,7 @@ def test_login_failure_when_not_logged_in_after_post():
 
 
 def test_login_request_error_includes_context():
-    client = HNClient(session=FakeWebSession(LOGGED_IN_HTML, post_fails=True))
+    client = HNClient(session=FakeWebSession(LOGGED_IN_HTML, post_fails=True), max_retries=0)
     with pytest.raises(HNClientError, match="connection reset"):
         client.login("alice", "secret")
 
@@ -96,13 +96,39 @@ def test_get_text_error_includes_url():
         def get(self, url: str, timeout: float):
             raise requests.RequestException("boom")
 
-    client = HNClient(session=DeadSession())
+    client = HNClient(session=DeadSession(), max_retries=0)
     with pytest.raises(HNClientError) as excinfo:
         client.get_logged_in_user()
 
     message = str(excinfo.value)
     assert "news.ycombinator.com" in message
     assert "boom" in message
+
+
+def test_get_text_retries_transient_failure():
+    """Web requests get the same retry treatment as API requests."""
+
+    class FlakyTextSession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url: str, timeout: float):
+            self.calls += 1
+            if self.calls == 1:
+                raise requests.RequestException("flaky")
+            return FakeTextResponse(LOGGED_IN_HTML)
+
+    session = FlakyTextSession()
+    client = HNClient(session=session, backoff=0, sleep=lambda _: None)
+
+    assert client.get_logged_in_user() == "alice"
+    assert session.calls == 2
+
+
+def test_default_session_sets_user_agent():
+    client = HNClient()
+    assert client.session is not None
+    assert "hn-cli" in client.session.headers["User-Agent"]
 
 
 def test_get_story_rejects_non_story():

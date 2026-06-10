@@ -59,9 +59,22 @@ def test_render_link_text_contains_url():
     assert "https://example.com" in text
 
 
-def test_render_help_text_lists_all_commands():
+def test_render_help_text_covers_every_parser_option():
+    """Drift guard: every subcommand and flag in build_parser() must appear in help."""
+    import argparse
+
+    from hn_cli import cli
+
+    parser = cli.build_parser()
+    subparsers = next(
+        action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
+    )
     text = render.render_help_text()
-    for command in ("list", "story", "comments", "link", "login", "logout", "whoami"):
-        assert command in text
-    assert "--depth" in text
-    assert "--max-comments" in text
+
+    for name, subparser in subparsers.choices.items():
+        assert name in text, f"command '{name}' missing from help"
+        for action in subparser._actions:
+            for option in action.option_strings:
+                if option == "--help":
+                    continue
+                assert option in text, f"option '{option}' of '{name}' missing from help"

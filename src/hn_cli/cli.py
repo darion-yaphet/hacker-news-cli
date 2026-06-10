@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import shlex
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable, NoReturn
+
+import requests
 
 from .auth import apply_auth_session, clear_auth, persist_session
 from .client import HNClient, HNClientError
@@ -67,9 +70,10 @@ def build_parser() -> JsonArgumentParser:
 
     subparsers.add_parser("help", help="Show help for all commands")
     subparsers.add_parser("interactive", help="Start interactive mode with > prompt")
+    # No --password flag: a CLI argument would leak the password into shell
+    # history and `ps` output. Use HN_CLI_PASSWORD or the interactive prompt.
     login_parser = subparsers.add_parser("login", help="Login to Hacker News")
     login_parser.add_argument("--username")
-    login_parser.add_argument("--password")
     _add_client_arguments(login_parser)
     logout_parser = subparsers.add_parser("logout", help="Logout from Hacker News")
     _add_client_arguments(logout_parser)
@@ -157,7 +161,11 @@ def output_payload(payload: OutputPayload, output_format: str) -> None:
         raise CLIError("Unknown command")
 
 
-def run(argv: list[str], client: HNClient | None = None) -> int:
+def run(
+    argv: list[str],
+    client: HNClient | None = None,
+    session: requests.Session | None = None,
+) -> int:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
@@ -179,13 +187,14 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
         timeout=args.timeout,
         max_retries=args.retries,
         backoff=args.backoff,
+        session=session,
     )
-    _hydrate_client_auth(client)
+    saved_user = _hydrate_client_auth(client)
 
     try:
         if args.command == "login":
             username = (args.username or input("Username: ")).strip()
-            password = args.password or getpass.getpass("Password: ")
+            password = os.environ.get("HN_CLI_PASSWORD") or getpass.getpass("Password: ")
             user = client.login(username, password)
             if client.session is None:
                 raise CLIError("Session not initialized")
@@ -203,6 +212,10 @@ def run(argv: list[str], client: HNClient | None = None) -> int:
             print_json({"ok": True, "logged_out": logged_out, "local_cleared": True})
             return 0
         elif args.command == "whoami":
+            if saved_user is None:
+                # No saved session: answer locally instead of hitting the network.
+                print_json({"authenticated": False, "username": None})
+                return 0
             current_user = client.get_logged_in_user()
             print_json({"authenticated": bool(current_user), "username": current_user})
             return 0
@@ -239,7 +252,17 @@ def run_interactive(
     runner: Callable[[list[str]], int] | None = None,
 ) -> int:
     """Start interactive mode and execute one command per input line."""
-    run_command = runner if runner is not None else run
+    run_command: Callable[[list[str]], int]
+    if runner is None:
+        # One session for the whole REPL: reuses HTTP connections across commands.
+        shared_session = requests.Session()
+
+        def _default_runner(argv: list[str]) -> int:
+            return run(argv, session=shared_session)
+
+        run_command = _default_runner
+    else:
+        run_command = runner
     print_text("Interactive mode. Type 'help' for commands, 'exit' or 'quit' to leave.\n")
 
     while True:
@@ -279,7 +302,8 @@ def run_interactive(
             continue
 
 
-def _hydrate_client_auth(client: Any) -> None:
+def _hydrate_client_auth(client: Any) -> str | None:
+    """Load saved cookies into the client; return the saved username, if any."""
     if not hasattr(client, "session") or client.session is None:
-        return
-    apply_auth_session(client.session)
+        return None
+    return apply_auth_session(client.session)

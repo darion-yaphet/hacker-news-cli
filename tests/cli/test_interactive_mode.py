@@ -91,6 +91,25 @@ def test_interactive_catches_keyboard_interrupt_from_runner(capsys):
     assert "Interactive mode." in out
 
 
+def test_interactive_default_runner_shares_one_session(monkeypatch):
+    """Without an explicit runner, every command reuses the same HTTP session."""
+    sessions: list[object] = []
+
+    def fake_run(argv, client=None, session=None):
+        sessions.append(session)
+        return 0
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    inputs = iter(["list", "story --id 1", "quit"])
+
+    code = cli.run_interactive(input_fn=lambda _: next(inputs))
+
+    assert code == 0
+    assert len(sessions) == 2
+    assert sessions[0] is not None
+    assert sessions[0] is sessions[1]
+
+
 def test_run_interactive_command_delegates(monkeypatch):
     called = {"count": 0}
 

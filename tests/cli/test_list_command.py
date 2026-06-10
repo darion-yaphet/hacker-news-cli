@@ -53,6 +53,41 @@ def test_list_command_rejects_non_positive_page(capsys):
     assert "--page" in err
 
 
+def test_run_builds_client_with_injected_session(capsys, monkeypatch, tmp_path):
+    """run(session=...) must reach the HN API through the provided session."""
+    monkeypatch.setenv("HN_CLI_AUTH_FILE", str(tmp_path / "auth.json"))
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._payload
+
+    class FakeSession:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def get(self, url: str, timeout: float):
+            self.calls.append(url)
+            if url.endswith("/topstories.json"):
+                return FakeResponse([10])
+            if url.endswith("/item/10.json"):
+                return FakeResponse({"id": 10, "type": "story", "by": "a", "title": "Via session"})
+            raise AssertionError(f"unexpected url: {url}")
+
+    session = FakeSession()
+    code = cli.run(["list", "--limit", "1", "--format", "json"], session=session)
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert json.loads(out)["items"][0]["title"] == "Via session"
+    assert session.calls  # the injected session carried the traffic
+
+
 def test_list_command_rejects_invalid_client_args(capsys):
     code = cli.run(["list", "--timeout", "0"], client=FakeClient())
     assert code == 2

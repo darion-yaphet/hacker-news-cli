@@ -15,6 +15,13 @@ from .models import Comment, Story
 
 logger = logging.getLogger(__name__)
 
+USER_AGENT = "hn-cli/0.1 (+https://github.com/darion-yaphet/hacker-news-cli)"
+
+# HN has no auth API; login state is scraped from the web UI. These patterns
+# are the single place to fix if news.ycombinator.com changes its markup.
+_USER_LINK_RE = re.compile(r'href="user\?id=([^"&]+)".*?\|\s*<a href="logout\?', re.DOTALL)
+_LOGOUT_LINK_RE = re.compile(r'href="(logout\?[^"]+)"')
+
 
 class HNClientError(RuntimeError):
     pass
@@ -62,6 +69,12 @@ class HNClient:
     def __post_init__(self) -> None:
         if self.session is None:
             self.session = requests.Session()
+        if isinstance(self.session, requests.Session):
+            # Identify ourselves instead of the generic python-requests UA,
+            # but never stomp a caller-provided custom User-Agent.
+            current_agent = str(self.session.headers.get("User-Agent") or "")
+            if not current_agent or current_agent.startswith("python-requests"):
+                self.session.headers["User-Agent"] = USER_AGENT
 
     @classmethod
     def feed_endpoint(cls, feed: str) -> str:
@@ -72,17 +85,16 @@ class HNClient:
     def _build_url(self, path: str) -> str:
         return f"{self.base_url}/{path}.json"
 
-    def _get_json(self, path: str) -> Any:
-        if self.session is None:
-            raise HNClientError("Session not initialized")
-        url = self._build_url(path)
+    def _request_with_retry(
+        self, request: Callable[[], requests.Response], context: str
+    ) -> requests.Response:
         attempts = self.max_retries + 1
         last_exc: Exception | None = None
         for attempt in range(attempts):
             try:
-                response = self.session.get(url, timeout=self.timeout)
+                response = request()
                 response.raise_for_status()
-                return response.json()
+                return response
             except requests.RequestException as exc:
                 last_exc = exc
                 if attempt < self.max_retries:
@@ -90,18 +102,27 @@ class HNClient:
                     if delay > 0:
                         self.sleep(delay)
         raise HNClientError(
-            f"GET {url} failed after {attempts} attempt(s): {last_exc}"
+            f"{context} failed after {attempts} attempt(s): {last_exc}"
         ) from last_exc
 
-    def _get_text(self, url: str) -> str:
-        if self.session is None:
+    def _get_json(self, path: str) -> Any:
+        session = self.session
+        if session is None:
             raise HNClientError("Session not initialized")
-        try:
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
-            return response.text
-        except requests.RequestException as exc:
-            raise HNClientError(f"GET {url} failed: {exc}") from exc
+        url = self._build_url(path)
+        response = self._request_with_retry(
+            lambda: session.get(url, timeout=self.timeout), f"GET {url}"
+        )
+        return response.json()
+
+    def _get_text(self, url: str) -> str:
+        session = self.session
+        if session is None:
+            raise HNClientError("Session not initialized")
+        response = self._request_with_retry(
+            lambda: session.get(url, timeout=self.timeout), f"GET {url}"
+        )
+        return response.text
 
     def list_story_ids(self, feed: str) -> list[int]:
         endpoint = self.feed_endpoint(feed)
@@ -199,27 +220,26 @@ class HNClient:
 
     def get_logged_in_user(self) -> str | None:
         html = self._get_text(f"{self.web_base_url}/news")
-        match = re.search(r'href="user\?id=([^"&]+)".*?\|\s*<a href="logout\?', html, re.DOTALL)
+        match = _USER_LINK_RE.search(html)
         if not match:
             return None
         return unquote(match.group(1))
 
     def login(self, username: str, password: str) -> str:
-        if self.session is None:
+        session = self.session
+        if session is None:
             raise HNClientError("Session not initialized")
         if not username.strip() or not password:
             raise HNClientError("Username and password are required")
         # Avoid stale cookies making a failed login appear successful.
-        self.session.cookies.clear()
-        try:
-            response = self.session.post(
-                f"{self.web_base_url}/login",
-                data={"acct": username, "pw": password},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise HNClientError(f"Login request failed: {exc}") from exc
+        session.cookies.clear()
+        url = f"{self.web_base_url}/login"
+        self._request_with_retry(
+            lambda: session.post(
+                url, data={"acct": username, "pw": password}, timeout=self.timeout
+            ),
+            f"Login POST {url}",
+        )
 
         logged_in_user = self.get_logged_in_user()
         if not logged_in_user:
@@ -227,16 +247,15 @@ class HNClient:
         return logged_in_user
 
     def logout(self) -> bool:
-        if self.session is None:
+        session = self.session
+        if session is None:
             raise HNClientError("Session not initialized")
         html = self._get_text(f"{self.web_base_url}/news")
-        match = re.search(r'href="(logout\?[^"]+)"', html)
+        match = _LOGOUT_LINK_RE.search(html)
         if not match:
             return False
         logout_url = urljoin(f"{self.web_base_url}/", unquote(match.group(1)))
-        try:
-            response = self.session.get(logout_url, timeout=self.timeout)
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise HNClientError(f"Logout request failed: {exc}") from exc
+        self._request_with_retry(
+            lambda: session.get(logout_url, timeout=self.timeout), f"Logout GET {logout_url}"
+        )
         return True
