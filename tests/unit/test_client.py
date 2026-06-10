@@ -18,6 +18,7 @@ def test_feed_endpoint_invalid():
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class FakeResponse:
     def __init__(self, payload):
         self._payload = payload
@@ -48,13 +49,20 @@ class DictSession:
 # get_comments tests
 # ---------------------------------------------------------------------------
 
+
 def _make_story(kids: list[int]) -> dict:
     return {"id": 1, "type": "story", "by": "alice", "title": "T", "kids": kids}
 
 
 def _make_comment(cid: int, parent: int, kids: list[int] | None = None) -> dict:
-    return {"id": cid, "type": "comment", "by": "bob", "text": f"comment {cid}",
-            "parent": parent, "kids": kids or []}
+    return {
+        "id": cid,
+        "type": "comment",
+        "by": "bob",
+        "text": f"comment {cid}",
+        "parent": parent,
+        "kids": kids or [],
+    }
 
 
 def test_get_comments_empty():
@@ -89,6 +97,64 @@ def test_get_comments_nested():
     comments = client.get_comments(1)
 
     assert [c.id for c in comments] == ["10", "20", "30"]
+
+
+def test_get_comments_thread_order_and_depth():
+    """Comments come back in thread (DFS) order with depth filled in."""
+    items = {
+        "item/1": _make_story(kids=[10, 11]),
+        "item/10": _make_comment(10, parent=1, kids=[20]),
+        "item/11": _make_comment(11, parent=1, kids=[21]),
+        "item/20": _make_comment(20, parent=10),
+        "item/21": _make_comment(21, parent=11),
+    }
+    client = HNClient(session=DictSession(items))
+    comments = client.get_comments(1)
+
+    assert [c.id for c in comments] == ["10", "20", "11", "21"]
+    assert [c.depth for c in comments] == [0, 1, 0, 1]
+
+
+def test_get_comments_max_depth_limits_descent():
+    """max_depth=1 keeps only top-level comments and never fetches replies."""
+    items = {
+        "item/1": _make_story(kids=[10, 11]),
+        "item/10": _make_comment(10, parent=1, kids=[20]),
+        "item/11": _make_comment(11, parent=1, kids=[21]),
+        "item/20": _make_comment(20, parent=10),
+        "item/21": _make_comment(21, parent=11),
+    }
+    session = DictSession(items)
+    client = HNClient(session=session)
+    comments = client.get_comments(1, max_depth=1)
+
+    assert [c.id for c in comments] == ["10", "11"]
+    # story + 2 top-level comments only; replies never requested
+    assert len(session.calls) == 3
+
+
+def test_get_comments_max_comments_truncates():
+    """max_comments caps the result, keeping parents before children."""
+    items = {
+        "item/1": _make_story(kids=[10, 11]),
+        "item/10": _make_comment(10, parent=1, kids=[20]),
+        "item/11": _make_comment(11, parent=1, kids=[21]),
+        "item/20": _make_comment(20, parent=10),
+        "item/21": _make_comment(21, parent=11),
+    }
+    client = HNClient(session=DictSession(items))
+    comments = client.get_comments(1, max_comments=3)
+
+    # breadth-first fill: both top-levels kept, then first reply, in thread order
+    assert [c.id for c in comments] == ["10", "20", "11"]
+
+
+def test_get_comments_rejects_non_positive_limits():
+    client = HNClient(session=DictSession({"item/1": _make_story(kids=[])}))
+    with pytest.raises(ValueError):
+        client.get_comments(1, max_depth=0)
+    with pytest.raises(ValueError):
+        client.get_comments(1, max_comments=-1)
 
 
 def test_get_comments_concurrent_fetches():
@@ -146,6 +212,7 @@ def test_list_stories_empty_page():
 
 def test_get_comments_skips_failed_item():
     """A failing item fetch should be skipped, not abort the whole call."""
+
     class FlakySession:
         def get(self, url: str, timeout: float):
             if url.endswith("/item/11.json"):

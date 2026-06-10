@@ -16,6 +16,25 @@ class HNClientError(RuntimeError):
     pass
 
 
+def _thread_order(comments: list[Comment], root_id: str) -> list[Comment]:
+    """Reorder breadth-first fetched comments into thread (depth-first) order.
+
+    Sibling order is preserved because the fetch appends comments in the
+    parent's `kids` order.
+    """
+    children: dict[str, list[Comment]] = {}
+    for comment in comments:
+        children.setdefault(comment.parent_id, []).append(comment)
+
+    ordered: list[Comment] = []
+    stack = list(reversed(children.get(root_id, [])))
+    while stack:
+        comment = stack.pop()
+        ordered.append(comment)
+        stack.extend(reversed(children.get(comment.id, [])))
+    return ordered
+
+
 @dataclass
 class HNClient:
     base_url: str = "https://hacker-news.firebaseio.com/v0"
@@ -120,27 +139,48 @@ class HNClient:
             raise HNClientError("Item is not a story")
         return Story.from_api(data)
 
-    def get_comments(self, story_id: int | str) -> list[Comment]:
+    def get_comments(
+        self,
+        story_id: int | str,
+        max_depth: int | None = None,
+        max_comments: int | None = None,
+    ) -> list[Comment]:
+        if max_depth is not None and max_depth < 1:
+            raise ValueError("max_depth must be a positive integer")
+        if max_comments is not None and max_comments < 1:
+            raise ValueError("max_comments must be a positive integer")
+
         story = self.get_item(story_id)
-        pending: list[int] = list(story.get("kids", []) or [])
+        root_id = str(story.get("id", story_id))
+        pending: list[tuple[int, int]] = [(cid, 0) for cid in story.get("kids", []) or []]
         if not pending:
             return []
 
+        # Breadth-first so each level fetches concurrently; depth rides along
+        # with each id so limits and rendering know how deep a comment sits.
         comments: list[Comment] = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             while pending:
-                futures = [executor.submit(self.get_item, cid) for cid in pending]
+                if max_comments is not None and len(comments) >= max_comments:
+                    break
+                futures = [(executor.submit(self.get_item, cid), depth) for cid, depth in pending]
                 pending = []
-                for future in futures:
+                for future, depth in futures:
                     try:
                         data = future.result()
                     except HNClientError:
                         continue
                     if data.get("type") != "comment":
                         continue
-                    comments.append(Comment.from_api(data))
-                    pending.extend(data.get("kids", []) or [])
-        return comments
+                    comments.append(Comment.from_api(data, depth=depth))
+                    if max_depth is None or depth + 1 < max_depth:
+                        pending.extend((kid, depth + 1) for kid in data.get("kids", []) or [])
+
+        if max_comments is not None:
+            # Breadth-first order guarantees a parent precedes its children,
+            # so truncating here never orphans a kept comment.
+            comments = comments[:max_comments]
+        return _thread_order(comments, root_id)
 
     def get_logged_in_user(self) -> str | None:
         html = self._get_text(f"{self.web_base_url}/news")

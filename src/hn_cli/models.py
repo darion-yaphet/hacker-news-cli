@@ -52,15 +52,17 @@ class Comment:
     age: str
     content: str
     parent_id: str
+    depth: int = 0
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> "Comment":
+    def from_api(cls, data: dict[str, Any], depth: int = 0) -> "Comment":
         return cls(
             id=str(data.get("id", "")),
             author=data.get("by") or "unknown",
             age=human_age(data.get("time")),
             content=data.get("text") or "",
             parent_id=str(data.get("parent", "")),
+            depth=depth,
         )
 
 

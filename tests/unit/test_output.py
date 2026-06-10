@@ -72,7 +72,9 @@ def test_comments_output_contains_required_keys():
         "age",
         "content",
         "parent_id",
+        "depth",
     }
+    assert comment["depth"] == 0
 
 
 def test_link_output_contains_required_keys():

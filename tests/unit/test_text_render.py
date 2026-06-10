@@ -43,6 +43,17 @@ def test_render_comments_text_contains_fields():
     assert "Hello" in text
 
 
+def test_render_comments_text_indents_by_depth():
+    top = Comment(id="10", author="bob", age="5m ago", content="parent", parent_id="1")
+    reply = Comment(id="20", author="eve", age="1m ago", content="reply", parent_id="10", depth=1)
+    text = render.render_comments_text("1", [top, reply])
+
+    lines = text.splitlines()
+    assert "- bob · 5m ago" in lines
+    assert "  - eve · 1m ago" in lines
+    assert "    reply" in lines
+
+
 def test_render_link_text_contains_url():
     text = render.render_link_text(_story())
     assert "https://example.com" in text

@@ -55,6 +55,8 @@ def build_parser() -> JsonArgumentParser:
 
     comments_parser = subparsers.add_parser("comments", help="Show story comments")
     comments_parser.add_argument("--id", required=True)
+    comments_parser.add_argument("--depth", type=int, default=None)
+    comments_parser.add_argument("--max-comments", type=int, default=None)
     _add_client_arguments(comments_parser)
     _add_format_argument(comments_parser)
 
@@ -98,7 +100,11 @@ def handle_story(args: argparse.Namespace, client: HNClient) -> OutputPayload:
 
 
 def handle_comments(args: argparse.Namespace, client: HNClient) -> OutputPayload:
-    comments = client.get_comments(args.id)
+    if args.depth is not None and args.depth < 1:
+        raise CLIError("--depth must be a positive integer")
+    if args.max_comments is not None and args.max_comments < 1:
+        raise CLIError("--max-comments must be a positive integer")
+    comments = client.get_comments(args.id, max_depth=args.depth, max_comments=args.max_comments)
     return OutputPayload("comments", {"story_id": str(args.id), "comments": comments})
 
 

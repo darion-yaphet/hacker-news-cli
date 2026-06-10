@@ -96,13 +96,14 @@ def render_story_text(story: Story) -> str:
 def render_comments_text(story_id: str, comments: Iterable[Comment]) -> str:
     lines = [f"Comments for story {story_id}"]
     for comment in comments:
-        lines.append(f"- {comment.author} · {comment.age}")
+        indent = "  " * comment.depth
+        lines.append(f"{indent}- {comment.author} · {comment.age}")
         content = _comment_text(comment)
         if content:
             for line in content.splitlines():
-                lines.append(f"  {line}")
+                lines.append(f"{indent}  {line}")
         else:
-            lines.append(f"  {_empty_marker(comment)}")
+            lines.append(f"{indent}  {_empty_marker(comment)}")
     return "\n".join(lines)
 
 
@@ -154,6 +155,13 @@ def render_help_text() -> str:
             [
                 ("--id", "ID", "Story ID (required)"),
                 ("--format", "{json,text}", "Output format (default: json)"),
+            ],
+        ),
+        (
+            "comments",
+            [
+                ("--depth", "INT", "Max thread depth to fetch (default: unlimited)"),
+                ("--max-comments", "INT", "Max comments to fetch (default: unlimited)"),
             ],
         ),
         (

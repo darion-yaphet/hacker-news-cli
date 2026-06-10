@@ -24,6 +24,7 @@ def comment_to_dict(comment: Comment) -> dict:
         "age": comment.age,
         "content": comment.content,
         "parent_id": comment.parent_id,
+        "depth": comment.depth,
     }
 
 
